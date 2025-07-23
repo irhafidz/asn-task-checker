@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ASN Self-Assessment Task Checker</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    input, select { margin-right: 1rem; padding: 0.3rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    th { background-color: #f2f2f2; }
+    .enabled { color: green; font-weight: bold; }
+    .disabled { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>ASN Self-Assessment Task Checker (Live)</h1>
+  <p>This tool checks if ASN staff have completed the BerAKHLAK self-assessment survey before allowing task execution.</p>
+
+  <div>
+    <label for="searchInput">Search by Name or NIP:</label>
+    <input type="text" id="searchInput" placeholder="Enter name or NIP">
+
+    <label for="statusFilter">Filter by Status:</label>
+    <select id="statusFilter">
+      <option value="All">All</option>
+      <option value="Submitted">Submitted</option>
+      <option value="Not Started">Not Started</option>
+      <option value="Not Found">Not Found</option>
+    </select>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Nama ASN</th>
+        <th>NIP</th>
+        <th>Task</th>
+        <th>Survey Status</th>
+        <th>Can Start Task?</th>
+      </tr>
+    </thead>
+    <tbody id="asnTable"></tbody>
+  </table>
+
+  <script>
+    const surveyURL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRjGIz8lOCO2FUbrNESK5N7buNlwtsUb_dZXGQkqoobR-5TIDZZubAA1QfHThn7cQ/pub?gid=1341161062&single=true&output=csv";
+    const taskURL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRjGIz8lOCO2FUbrNESK5N7buNlwtsUb_dZXGQkqoobR-5TIDZZubAA1QfHThn7cQ/pub?gid=709714110&single=true&output=csv";
+
+    let surveyData = [];
+    let taskData = [];
+
+    function renderTable() {
+      const table = document.getElementById('asnTable');
+      table.innerHTML = '';
+      const searchQuery = document.getElementById('searchInput').value.toLowerCase();
+      const statusFilter = document.getElementById('statusFilter').value;
+
+      taskData.forEach(task => {
+        const match = surveyData.find(row => row['NIP'] === task['NIP']);
+        const status = match ? match['Status'] : 'Not Found';
+        const name = match ? match['Nama ASN'] : 'Unknown';
+        const canStart = status === 'Submitted';
+
+        const textMatch = name.toLowerCase().includes(searchQuery) || task['NIP'].includes(searchQuery);
+        const statusMatch = statusFilter === 'All' || status === statusFilter;
+
+        if (textMatch && statusMatch) {
+          const row = `<tr>
+            <td>${name}</td>
+            <td>${task['NIP']}</td>
+            <td>${task['Task Name']}</td>
+            <td>${status}</td>
+            <td class="${canStart ? 'enabled' : 'disabled'}">${canStart ? '✅ Enabled' : '❌ Disabled'}</td>
+          </tr>`;
+          table.innerHTML += row;
+        }
+      });
+    }
+
+    function fetchData() {
+      Papa.parse(surveyURL, {
+        download: true,
+        header: true,
+        complete: results => {
+          surveyData = results.data;
+          Papa.parse(taskURL, {
+            download: true,
+            header: true,
+            complete: results => {
+              taskData = results.data;
+              renderTable();
+            }
+          });
+        }
+      });
+    }
+
+    document.getElementById('searchInput').addEventListener('input', renderTable);
+    document.getElementById('statusFilter').addEventListener('change', renderTable);
+
+    fetchData();
+  </script>
+</body>
+</html>
