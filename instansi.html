@@ -1,55 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>EDA Dashboard</title>
+<meta charset="UTF-8" />
+<title>EDA Dashboard – INSTANSI (no NIP shown)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #111827;
-    color: #f3f4f6;
-    margin: 0; padding: 20px;
+  :root{
+    --bg:#111827; --panel:#1f2937; --text:#f3f4f6; --muted:#9ca3af; --accent:#60a5fa; --border:#374151;
   }
-  h1 { margin: 0 0 16px; font-size: 22px; }
-  .cards {
-    display: flex; flex-wrap: wrap; gap: 16px;
-  }
-  .card {
-    background: #1f2937;
-    border-radius: 8px;
-    padding: 16px;
-    flex: 1; min-width: 180px;
-  }
-  .kpi { font-size: 28px; font-weight: bold; color: #60a5fa; }
-  .note { font-size: 12px; margin-top: 6px; color: #9ca3af; }
-  .legend { columns: 1; column-gap: 0; font-size: 14px; margin-top: 8px; }
-  .chart-wrap { overflow-x: auto; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; padding:20px; background:var(--bg); color:var(--text); font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif; }
+  h1{ margin:0 0 12px; font-size:20px; }
+  h2{ margin:0 0 8px; font-size:16px; }
+  .cards{ display:flex; flex-wrap:wrap; gap:16px; }
+  .card{ background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; }
+  .kpi{ font-size:28px; font-weight:700; color:var(--accent); }
+  .note{ font-size:12px; color:var(--muted); margin-top:6px; }
+  .chart-wrap{ overflow-x:auto; }
+  .legend{ columns:1; column-gap:0; font-size:14px; }
+  table{ width:100%; border-collapse:collapse; }
+  th, td{ padding:10px 12px; border-bottom:1px solid var(--border); font-size:13px; }
+  th{ text-align:left; color:var(--muted); font-weight:600; }
+  .mt{ margin-top:16px; }
 </style>
 </head>
 <body>
-  <h1>EDA Dashboard: INSTANSI vs NIP</h1>
+  <h1>EDA Dashboard: INSTANSI vs NIP (no NIP displayed)</h1>
 
   <!-- KPI CARDS -->
   <div class="cards">
-    <section class="card">
-      <div>Total Rows</div>
+    <section class="card" style="min-width:200px;">
+      <div>Total rows (all data)</div>
       <div id="kpiTotal" class="kpi">–</div>
     </section>
-    <section class="card">
-      <div>Unique NIP</div>
+    <section class="card" style="min-width:200px;">
+      <div>Unique NIP (global)</div>
       <div id="kpiUnique" class="kpi">–</div>
     </section>
-    <section class="card">
-      <div>Duplicate NIP</div>
+    <section class="card" style="min-width:200px;">
+      <div>Duplicate NIP (global, excess)</div>
       <div id="kpiDup" class="kpi">–</div>
+    </section>
+    <section class="card" style="min-width:200px;">
+      <div>Duplicate groups (global)</div>
+      <div id="kpiGroups" class="kpi">–</div>
     </section>
   </div>
 
   <!-- HISTOGRAM -->
-  <section class="card" style="margin-top:16px;">
-    <h2 style="margin:0 0 8px; font-size:16px;">Histogram: Duplicate NIP per INSTANSI (codes)</h2>
+  <section class="card mt">
+    <h2>Histogram: Duplicate NIP per INSTANSI (codes)</h2>
     <div class="chart-wrap">
       <canvas id="dupChart" style="height:420px;"></canvas>
     </div>
@@ -57,90 +59,176 @@
   </section>
 
   <!-- LEGEND -->
-  <section class="card" style="margin-top:16px;">
-    <h2 style="margin:0 0 8px; font-size:16px;">Legend (Code → INSTANSI)</h2>
-    <div id="legend" class="legend muted">–</div>
+  <section class="card mt">
+    <h2>Legend (Code → INSTANSI)</h2>
+    <div id="legend" class="legend">–</div>
   </section>
 
+  <!-- SUMMARY TABLE (RESTORED) -->
+  <section class="card mt">
+    <h2>Summary by INSTANSI</h2>
+    <div class="note">Shows per-INSTANSI totals only (no NIP values shown anywhere).</div>
+    <div style="overflow:auto;">
+      <table id="summaryTbl">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>INSTANSI</th>
+            <th>Total Rows</th>
+            <th>Unique NIP</th>
+            <th>Not Unique (Duplicates)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card mt">
+  <h2>INSTANSI Not Found (from master 50)</h2>
+  <div id="missingInstansi">–</div>
+</section>
+
 <script>
-// ===== SETTINGS =====
-const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYesleChlLlIDTlmOMkZHtJ5HDgOXAj8mswik1y36Ta9KnG3Nu9k-ZU8EhhlwIgg/pub?gid=1404169547&single=true&output=csv";
+// ===== MASTER LIST (50 INSTANSI) =====
+const MASTER_INSTANSI = [
+  "BADAN KEPEGAWAIAN DAERAH",
+  "BADAN KESATUAN BANGSA DAN POLITIK",
+  "BADAN KOORDINASI WILAYAH BOJONEGORO",
+  "BADAN KOORDINASI WILAYAH JEMBER",
+  "BADAN KOORDINASI WILAYAH MADIUN",
+  "BADAN KOORDINASI WILAYAH MALANG",
+  "BADAN KOORDINASI WILAYAH PAMEKASAN",
+  "BADAN PENANGGULANGAN BENCANA DAERAH",
+  "BADAN PENDAPATAN DAERAH",
+  "BADAN PENGELOLA KEUANGAN DAN ASET DAERAH",
+  "BADAN PENGEMBANGAN SUMBER DAYA MANUSIA",
+  "BADAN PENGHUBUNG DAERAH PROVINSI",
+  "BADAN PERENCANAAN PEMBANGUNAN DAERAH",
+  "BADAN RISET DAN INOVASI DAERAH",
+  "DINAS ENERGI DAN SUMBER DAYA MINERAL",
+  "DINAS KEBUDAYAAN DAN PARIWISATA",
+  "DINAS KEHUTANAN",
+  "DINAS KELAUTAN DAN PERIKANAN",
+  "DINAS KEPEMUDAAN DAN OLAHRAGA",
+  "DINAS KESEHATAN",
+  "DINAS KOMUNIKASI DAN INFORMATIKA",
+  "DINAS KOPERASI USAHA KECIL DAN MENENGAH",
+  "DINAS LINGKUNGAN HIDUP",
+  "DINAS PEKERJAAN UMUM BINA MARGA",
+  "DINAS PEKERJAAN UMUM SUMBER DAYA AIR",
+  "DINAS PEMBERDAYAAN MASYARAKAT DAN DESA",
+  "DINAS PEMBERDAYAAN PEREMPUAN, PERLINDUNGAN ANAK DAN KEPENDUDUKAN",
+  "DINAS PENANAMAN MODAL DAN PELAYANAN TERPADU SATU PINTU",
+  "DINAS PENDIDIKAN INDUK",
+  "DINAS PERHUBUNGAN",
+  "DINAS PERINDUSTRIAN DAN PERDAGANGAN",
+  "DINAS PERKEBUNAN",
+  "DINAS PERPUSTAKAAN DAN KEARSIPAN",
+  "DINAS PERTANIAN DAN KETAHANAN PANGAN",
+  "DINAS PERUMAHAN RAKYAT, KAWASAN PERMUKIMAN DAN CIPTA KARYA",
+  "DINAS PETERNAKAN",
+  "DINAS SOSIAL",
+  "DINAS TENAGA KERJA DAN TRANSMIGRASI",
+  "INSPEKTORAT PROVINSI",
+  "SATUAN POLISI PAMONG PRAJA",
+  "BIRO ADMINISTRASI PEMBANGUNAN",
+  "BIRO ADMINISTRASI PIMPINAN",
+  "BIRO HUKUM",
+  "BIRO KESEJAHTERAAN RAKYAT",
+  "BIRO ORGANISASI",
+  "BIRO PEMERINTAHAN DAN OTONOMI DAERAH",
+  "BIRO PENGADAAN BARANG/JASA",
+  "BIRO PEREKONOMIAN",
+  "BIRO UMUM",
+  "SEKRETARIAT DPRD"
+];
+</script>
+
+  
+<script>
+// =================== SETTINGS ===================
+const CSV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYesleChlLlIDTlmOMkZHtJ5HDgOXAj8mswik1y36Ta9KnG3Nu9k-ZU8EhhlwIgg/pub?gid=1404169547&single=true&output=csv";
 
 let chart;
 
-// ===== MAIN PARSE =====
-Papa.parse(CSV_URL, {
+// =================== LOAD CSV ===================
+Papa.parse(CSV_URL + "&cachebust=" + Date.now(), {
   download: true,
   header: true,
   skipEmptyLines: true,
-  complete: (res)=>{
+  complete: (res) => {
     try { runEDA(res.data); }
-    catch(e){ console.error(e); alert("Error processing CSV. Columns required: INSTANSI, NIP"); }
+    catch(e){ console.error(e); alert("Error processing CSV. Required columns: INSTANSI, NIP"); }
   },
-  error: (err)=>{ console.error(err); alert("Failed to fetch CSV"); }
+  error: (err) => { console.error(err); alert("Failed to fetch CSV (is it published to the web?)"); }
 });
 
+// =================== EDA ===================
 function runEDA(rows){
-  // Clean
-  rows = rows.filter(r=> r.INSTANSI && r.NIP);
+  // Clean & standardize
+  const data = rows
+    .map(r => ({
+      INSTANSI: String(r.INSTANSI || "").trim().toUpperCase(),
+      NIP:      String(r.NIP || "").trim()
+    }))
+    .filter(r => r.INSTANSI && r.NIP);
 
-  // KPI calc
-  const totalRows = rows.length;
-  const nipAll = rows.map(r=> r.NIP);
-  const nipSet = new Set(nipAll);
-  const dupCount = totalRows - nipSet.size;
+  // Global KPIs
+  const totalRows = data.length;
+  const globalNipCounts = new Map();
+  for(const r of data){ globalNipCounts.set(r.NIP, (globalNipCounts.get(r.NIP) || 0) + 1); }
+  const uniqueGlobal = [...globalNipCounts.keys()].length;
+  const duplicateGroupsGlobal = [...globalNipCounts.values()].filter(n => n >= 2).length;
+  const duplicateExcessGlobal = totalRows - uniqueGlobal; // “excess” duplicates
 
-  // Group by INSTANSI
-  const map = {};
-  rows.forEach(r=>{
-    const inst = r.INSTANSI.trim();
-    if(!map[inst]) map[inst] = { total:0, dups:0 };
-    map[inst].total++;
-  });
-  // Count duplicates
-  const seen = new Set(), dups = new Set();
-  nipAll.forEach(n=>{
-    if(seen.has(n)) dups.add(n);
-    else seen.add(n);
-  });
-  rows.forEach(r=>{
-    if(dups.has(r.NIP)){
-      map[r.INSTANSI.trim()].dups++;
+  document.getElementById("kpiTotal").textContent  = totalRows.toLocaleString("id-ID");
+  document.getElementById("kpiUnique").textContent = uniqueGlobal.toLocaleString("id-ID");
+  document.getElementById("kpiDup").textContent    = duplicateExcessGlobal.toLocaleString("id-ID");
+  document.getElementById("kpiGroups").textContent = duplicateGroupsGlobal.toLocaleString("id-ID");
+
+  // Per-INSTANSI summary
+  // For each INSTANSI: total, unique NIP (within that INSTANSI), not_unique = total - unique
+  const byInst = new Map();
+  for(const r of data){
+    if(!byInst.has(r.INSTANSI)){
+      byInst.set(r.INSTANSI, { total:0, nipCounts:new Map() });
     }
-  });
+    const g = byInst.get(r.INSTANSI);
+    g.total += 1;
+    g.nipCounts.set(r.NIP, (g.nipCounts.get(r.NIP) || 0) + 1);
+  }
 
-  const summary = Object.entries(map).map(([inst,v])=>({
-    INSTANSI: inst, TOTAL: v.total, DUPLICATE: v.dups
-  }));
-  summary.sort((a,b)=> b.DUPLICATE - a.DUPLICATE);
+  const summary = [];
+  for(const [inst, g] of byInst.entries()){
+    const unique = [...g.nipCounts.keys()].length;
+    const notUnique = g.total - unique; // “excess” rows to make NIP unique within INSTANSI
+    summary.push({ INSTANSI: inst, TOTAL_ROWS: g.total, UNIQUE_NIP: unique, NOT_UNIQUE_NIP_COUNT: notUnique });
+  }
+  // Sort by duplicates desc, then total desc
+  summary.sort((a,b) => (b.NOT_UNIQUE_NIP_COUNT - a.NOT_UNIQUE_NIP_COUNT) || (b.TOTAL_ROWS - a.TOTAL_ROWS));
 
-  // Assign numeric codes
-  const legend = summary.map((r,i)=>({ code:i+1, inst:r.INSTANSI }));
-  const labels = legend.map(x=> x.code);
-  const dupCounts = summary.map(r=> r.DUPLICATE);
-
-  // KPIs
-  document.getElementById("kpiTotal").textContent = totalRows;
-  document.getElementById("kpiUnique").textContent = nipSet.size;
-  document.getElementById("kpiDup").textContent = dupCount;
-
-  // Legend text
+  // Legend (numeric codes in same order as summary)
+  const legend = summary.map((row, idx) => ({ code: idx+1, name: row.INSTANSI }));
   document.getElementById("legend").innerHTML =
-    legend.map(x=> `${x.code} → ${x.inst}`).join("<br>");
+    legend.map(x => `${x.code} = ${x.name}`).join("<br>");
 
-  // Chart
+  // ===== Histogram (use NOT_UNIQUE_NIP_COUNT per INSTANSI) =====
+  const labels = legend.map(x => x.code);
+  const dupCounts = summary.map(r => r.NOT_UNIQUE_NIP_COUNT);
+
   const ctx = document.getElementById("dupChart");
   if(chart) chart.destroy();
-
-  // widen canvas so bars not crushed
+  // widen canvas so bars stay readable (≈ 28px per bar)
   ctx.style.minWidth = (labels.length * 28) + "px";
 
   chart = new Chart(ctx, {
-    type: 'bar',
+    type: "bar",
     data: {
       labels,
       datasets: [{
-        label: 'Duplicates',
+        label: "Duplicates (excess)",
         data: dupCounts,
         barThickness: 22,
         maxBarThickness: 26,
@@ -153,11 +241,35 @@ function runEDA(rows){
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { title: { display: true, text: 'LEGEND CODE' }, ticks: { autoSkip: false } },
-        y: { title: { display: true, text: 'Jumlah Duplikat NIP' }, beginAtZero: true, ticks: { precision: 0 } }
+        x: { title: { display: true, text: "LEGEND CODE" }, ticks: { autoSkip: false } },
+        y: { title: { display: true, text: "Jumlah Duplikat NIP (excess)" }, beginAtZero: true, ticks: { precision: 0 } }
       }
     }
   });
+
+  // ===== Populate Summary Table (RESTORED) =====
+  const tbody = document.querySelector("#summaryTbl tbody");
+  tbody.innerHTML = "";
+  summary.forEach((row, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${i+1}</td>
+       <td>${row.INSTANSI}</td>
+       <td>${row.TOTAL_ROWS}</td>
+       <td>${row.UNIQUE_NIP}</td>
+       <td>${row.NOT_UNIQUE_NIP_COUNT}</td>`;
+    tbody.appendChild(tr);
+  });
+  // Build list of missing INSTANSI (those in MASTER not present in summary)
+const presentInstansi = new Set(summary.map(r => r.INSTANSI));
+const missingInstansi = MASTER_INSTANSI.filter(name => !presentInstansi.has(name));
+
+// Render the missing list
+document.getElementById("missingInstansi").innerHTML =
+  missingInstansi.length
+    ? missingInstansi.map(x => "• " + x).join("<br>")
+    : "<em>All 50 INSTANSI are present.</em>";
+
 }
 </script>
 </body>
