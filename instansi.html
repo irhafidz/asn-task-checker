@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>df4 – EDA by INSTANSI (GitHub Pages, Live Google Drive CSV)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1020; --panel:#121833; --muted:#9fb0ff; --text:#e8ecff; --accent:#9dd1ff; --border:#28305a;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 24px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: linear-gradient(180deg, rgba(11,16,32,0.98), rgba(11,16,32,0.85)); backdrop-filter: blur(6px); z-index: 10; }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    .sub { color: var(--muted); font-size: 13px; }
+    main { max-width: 1100px; margin: 18px auto 60px; padding: 0 16px; }
+    .card { background: var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; box-shadow: 0 6px 30px rgba(0,0,0,0.2); }
+    .grid { display:grid; grid-template-columns: 1fr; gap:16px; }
+    @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    label { font-size: 13px; color: var(--muted); }
+    input[type=text] { width: 420px; max-width: 100%; padding:10px 12px; border-radius: 10px; border:1px solid var(--border); background:#0f1530; color:var(--text); }
+    button, .btn { cursor:pointer; background:#1a234b; color:var(--text); border:1px solid var(--border); padding:10px 12px; border-radius:10px; font-weight:600; }
+    button:hover, .btn:hover { background:#1f2a5b; }
+    .kpi { display:grid; grid-template-columns: repeat(3,1fr); gap:12px; }
+    .kpi .card { text-align:center; }
+    .kpi h3 { margin:8px 0 0; font-size:28px; letter-spacing:0.5px; }
+    .kpi p { margin:2px 0 0; font-size:12px; color:var(--muted); }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:10px 12px; border-bottom:1px solid var(--border); font-size: 13px; }
+    th { text-align:left; color: var(--muted); font-weight:600; }
+    .muted { color: var(--muted); }
+    footer { text-align:center; color: var(--muted); padding: 24px; }
+    .legend { columns: 2; column-gap: 24px; }
+    @media (min-width: 900px) { .legend { columns: 3; } }
+    canvas { width: 100% !important; height: 420px !important; }
+    .note { font-size:12px; color:var(--muted); margin-top:6px; }
+  </style>
+  <!-- CSV parser & charts -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>df4 – EDA by <code>INSTANSI</code> (no NIP shown)</h1>
+    <div class="sub">Live CSV from Google Drive → Summary, Duplicates, Legend & Chart (codes only)</div>
+  </header>
+
+  <main>
+    <section class="card" style="margin-bottom:16px;">
+      <div class="row">
+        <label for="fileId"><strong>Google Drive File ID</strong> (CSV):</label>
+        <input id="fileId" type="text" placeholder="e.g. 1ABC123xyz..." />
+        <button id="loadBtn">Load</button>
+      </div>
+      <div class="note">Share your CSV in Google Drive as "Anyone with the link" → paste File ID above. Expected columns: <code>INSTANSI</code> and <code>NIP</code>. NIP is used only for calculation and is never displayed.</div>
+    </section>
+
+    <section class="kpi">
+      <div class="card">
+        <p>All rows in duplicate groups</p>
+        <h3 id="kpiAll">–</h3>
+      </div>
+      <div class="card">
+        <p>Excess rows to drop (make NIP unique)</p>
+        <h3 id="kpiExcess">–</h3>
+      </div>
+      <div class="card">
+        <p>Duplicate groups (distinct INSTANSI+NIP repeated)</p>
+        <h3 id="kpiGroups">–</h3>
+      </div>
+    </section>
+
+    <div class="grid" style="margin-top:16px;">
+      <section class="card">
+        <h2 style="margin:0 0 8px; font-size:16px;">Histogram: Duplicate NIP per INSTANSI (codes)</h2>
+        <canvas id="dupChart"></canvas>
+        <div class="note">X-axis uses numeric codes. See LEGEND at right.</div>
+      </section>
+
+      <section class="card">
+        <h2 style="margin:0 0 8px; font-size:16px;">Legend (Code → INSTANSI)</h2>
+        <div id="legend" class="legend muted">–</div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:16px;">
+      <h2 style="margin:0 0 8px; font-size:16px;">Summary by INSTANSI</h2>
+      <div class="note">Columns shown do <em>not</em> include NIP.</div>
+      <div style="overflow:auto;">
+        <table id="summaryTbl">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>INSTANSI</th>
+              <th>Total Rows</th>
+              <th>Unique NIP</th>
+              <th>Not Unique (Duplicates)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>Built for GitHub Pages.</footer>
+  </main>
+
+<script>
+// ===== Core EDA =====
+let chart;
+const q = (s)=>document.querySelector(s);
+
+q('#loadBtn').addEventListener('click', async ()=>{
+  const id = q('#fileId').value.trim();
+  if(!id){ alert('Please paste a Google Drive File ID'); return; }
+  const url = `https://drive.google.com/uc?id=${id}&export=download`;
+
+  Papa.parse(url, {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete: (res)=>{
+      try { runEDA(res.data); } 
+      catch(e){ console.error(e); alert('Error parsing/processing CSV. Check required columns: INSTANSI, NIP'); }
+    },
+    error: (err)=>{ console.error(err); alert('Failed to fetch CSV. Is sharing enabled?'); }
+  });
+});
+
+function runEDA(rows){
+  const hasInstansi = rows.length && ('INSTANSI' in rows[0]);
+  const hasNIP = rows.length && ('NIP' in rows[0]);
+  if(!hasInstansi || !hasNIP){ throw new Error('CSV must include INSTANSI and NIP columns'); }
+
+  const data = rows.map(r=>({
+    INSTANSI: String(r.INSTANSI||'').trim().toUpperCase(),
+    NIP: String(r.NIP||'').trim()
+  })).filter(r=>r.INSTANSI);
+
+  const byInst = new Map();
+  for(const r of data){
+    const g = byInst.get(r.INSTANSI) || { total:0, uniq:0, seen:new Set() };
+    g.total += 1;
+    if(!g.seen.has(r.NIP)) g.uniq += 1;
+    g.seen.add(r.NIP);
+    byInst.set(r.INSTANSI, g);
+  }
+
+  const summary = [];
+  for(const [inst, g] of byInst.entries()){
+    const notUniq = g.total - g.uniq;
+    summary.push({ INSTANSI: inst, TOTAL_ROWS: g.total, UNIQUE_NIP: g.uniq, NOT_UNIQUE_NIP_COUNT: notUniq });
+  }
+  summary.sort((a,b)=> b.NOT_UNIQUE_NIP_COUNT - a.NOT_UNIQUE_NIP_COUNT || b.TOTAL_ROWS - a.TOTAL_ROWS );
+
+  let allMembers = 0, excess = 0, groups = 0;
+  for(const [inst, g] of byInst.entries()){
+    const freq = new Map();
+    for(const r of data){ if(r.INSTANSI===inst){ freq.set(r.NIP, (freq.get(r.NIP)||0)+1); } }
+    for(const n of freq.values()){
+      if(n>=2){ allMembers += n; groups += 1; }
+    }
+    excess += (g.total - g.uniq);
+  }
+
+  q('#kpiAll').textContent = allMembers.toLocaleString('id-ID');
+  q('#kpiExcess').textContent = excess.toLocaleString('id-ID');
+  q('#kpiGroups').textContent = groups.toLocaleString('id-ID');
+
+  const legend = summary.map((row, idx)=>({ code: idx+1, name: row.INSTANSI }));
+
+  const tbody = q('#summaryTbl tbody');
+  tbody.innerHTML='';
+  summary.forEach((row, i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i+1}</td><td>${row.INSTANSI}</td><td>${row.TOTAL_ROWS}</td><td>${row.UNIQUE_NIP}</td><td>${row.NOT_UNIQUE_NIP_COUNT}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  q('#legend').innerHTML = legend.map(x=>`${x.code} = ${x.name}`).join('<br>');
+
+  const labels = legend.map(x=> x.code);
+  const dupCounts = summary.map(r=> r.NOT_UNIQUE_NIP_COUNT);
+  if(chart){ chart.destroy(); }
+  const ctx = document.getElementById('dupChart');
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Duplicates', data: dupCounts }] },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'LEGEND CODE' } },
+        y: { title: { display: true, text: 'Jumlah Duplikat NIP' }, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
