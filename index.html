@@ -70,16 +70,148 @@
   </section>
 
   <script>
-    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5C1wkIPrNoBRwRaDohzVFT6wfeX0lfSl2BTCUpDcQwiuQtgkybGjcmzKl7LBu7g/pub?gid=1021451323&single=true&output=csv";
-    const REFERENCE_UOBK = [
-      "RS JIWA MENUR","RS MATA MASYARAKAT JAWA TIMUR","RS PARU JEMBER",
-      "RS PARU MANGUHARJO PROVINSI JAWA TIMUR","RSUD DAHA HUSADA","RSUD DR. SAIFUL ANWAR",
-      "RSUD DR. SOEDONO MADIUN","RSUD DR. SOETOMO","RSUD DUNGUS",
-      "RSUD HAJI PROVINSI JAWA TIMUR","RSUD HUSADA PRIMA","RSUD KARSA HUSADA BATU",
-      "RSUD MOHAMMAD NOER PAMEKASAN","RSUD SUMBERGLAGAH"
-    ];
+  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5C1wkIPrNoBRwRaDohzVFT6wfeX0lfSl2BTCUpDcQwiuQtgkybGjcmzKl7LBu7g/pub?gid=1021451323&single=true&output=csv";
+  const REFERENCE_UOBK = [
+    "RS JIWA MENUR","RS MATA MASYARAKAT JAWA TIMUR","RS PARU JEMBER",
+    "RS PARU MANGUHARJO PROVINSI JAWA TIMUR","RSUD DAHA HUSADA","RSUD DR. SAIFUL ANWAR",
+    "RSUD DR. SOEDONO MADIUN","RSUD DR. SOETOMO","RSUD DUNGUS",
+    "RSUD HAJI PROVINSI JAWA TIMUR","RSUD HUSADA PRIMA","RSUD KARSA HUSADA BATU",
+    "RSUD MOHAMMAD NOER PAMEKASAN","RSUD SUMBERGLAGAH"
+  ];
 
-    const $ = (s)=>document.querySelector(s);
-    const src = $("#src"), ts = $("#ts"), kpiRows = $("#kpiRows"), kpiUnique = $("#kpiUnique");
-    const tblBody = $("#tblBody"), msg = $("#msg"), refFound = $("#refFound"), refNotFound = $("#refNotFound");
-    const errBox = $("#err"), barCanvas = document.g
+  const $ = (s)=>document.querySelector(s);
+  const src = $("#src"), ts = $("#ts"), kpiRows = $("#kpiRows"), kpiUnique = $("#kpiUnique");
+  const tblBody = $("#tblBody"), msg = $("#msg"), refFound = $("#refFound"), refNotFound = $("#refNotFound");
+  const errBox = $("#err"), barCanvas = document.getElementById("barChart"); let barChart;
+
+  function nowID() { return new Date().toLocaleString("id-ID",{hour12:false}); }
+  function showErr(title, detail) {
+    errBox.style.display = "block";
+    errBox.textContent = title + (detail ? "\n\n" + detail : "");
+  }
+
+  async function loadCSVText(url) {
+    const u = url + (url.includes("?") ? "&" : "?") + "v=" + Date.now(); // cache-bust
+    const res = await fetch(u, { redirect: "follow" });
+    let peek = "";
+    try { peek = await res.clone().text(); } catch {}
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText}\nPratinjau respons (200 chars):\n` + (peek||"").slice(0,200));
+    }
+    return peek;
+  }
+
+  function parseCSVText(text) {
+    const result = Papa.parse(text, { header:true, skipEmptyLines:true });
+    return result.data.map(row => {
+      // trim keys and values
+      const out = {};
+      for (const k in row) {
+        if (!Object.prototype.hasOwnProperty.call(row, k)) continue;
+        const nk = (k || "").trim();
+        const v = row[k];
+        out[nk] = typeof v === "string" ? v.trim() : v;
+      }
+      return out;
+    });
+  }
+
+  function detectUOBKKey(rows) {
+    const headers = Object.keys(rows[0] || {}).map(h => h.trim());
+    // patterns that often occur
+    const patterns = [
+      /^u\s*o\s*\/?\s*b\s*k$/i,               // UOBK, UO/BK, U O B K
+      /perangkat.*uobk/i,                     // e.g., "Perangkat Daerah/UOBK?"
+      /^uobk$/i,                              // plain UOBK
+    ];
+    for (const p of patterns) {
+      const hit = headers.find(h => p.test(h));
+      if (hit) return hit;
+    }
+    // fallback: any header that includes 'uobk'
+    const loose = headers.find(h => h.toLowerCase().includes("uobk"));
+    return loose || null;
+  }
+
+  function groupCountsByUOBK(rows, key) {
+    const map = new Map();
+    rows.forEach(r => {
+      const u = String((r[key] ?? "")).trim();
+      if (!u) return;
+      map.set(u, (map.get(u) || 0) + 1);
+    });
+    const total = Array.from(map.values()).reduce((a,b)=>a+b,0);
+    const arr = Array.from(map.entries())
+      .map(([UOBK, Row_Count]) => ({ UOBK, Row_Count, Percentage: Row_Count/total*100 }))
+      .sort((a,b)=> b.Row_Count - a.Row_Count);
+    return { rows: arr, total, unique: map.size };
+  }
+
+  function renderTable(arr){
+    tblBody.innerHTML = arr.map(r=>`<tr>
+      <td>${r.UOBK}</td><td>${r.Row_Count}</td><td>${r.Percentage.toFixed(1)}%</td>
+    </tr>`).join("");
+  }
+
+  function renderChart(arr){
+    const labels = arr.map(r=>r.UOBK);
+    const counts = arr.map(r=>r.Row_Count);
+    if (barChart) barChart.destroy();
+    barChart = new Chart(barCanvas, {
+      type: "bar",
+      data: { labels, datasets: [{ label: "Row Count", data: counts }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display:false }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.parsed.y} baris` } } },
+        scales: { x: { ticks: { autoSkip:false, maxRotation:45 } }, y: { beginAtZero:true } }
+      }
+    });
+  }
+
+  function renderReferenceCheck(arr){
+    const map = new Map(arr.map(r=>[r.UOBK, r.Row_Count]));
+    const found = [], notFound = [];
+    REFERENCE_UOBK.forEach(name=>{ map.has(name) ? found.push([name, map.get(name)]) : notFound.push(name); });
+    refFound.innerHTML = found.map(([n,c])=>`<li>${n} → <strong>${c}</strong> rows</li>`).join("") || "<li><em>(none)</em></li>";
+    refNotFound.innerHTML = notFound.map(n=>`<li>${n}</li>`).join("") || "<li><em>(none)</em></li>";
+  }
+
+  (async function init(){
+    src.textContent = CSV_URL;
+    msg.textContent = "Memuat…";
+    try {
+      const text = await loadCSVText(CSV_URL);
+      const rows = parseCSVText(text);
+
+      if (!rows.length) {
+        showErr("CSV kosong atau tidak ter-parse.",
+                "Cek apakah sheet yang dipublish berisi data.");
+        msg.textContent = "Gagal memuat.";
+        return;
+      }
+
+      const uobkKey = detectUOBKKey(rows);
+      if (!uobkKey) {
+        const headers = Object.keys(rows[0] || {});
+        showErr("Kolom UOBK tidak ditemukan.",
+                "Header terdeteksi: " + headers.join(", ") +
+                "\nBeri nama kolom sebagai 'UOBK' (tanpa spasi), atau variasi seperti 'UO/BK' / 'Perangkat Daerah/UOBK?'.");
+        msg.textContent = "Gagal memuat.";
+        return;
+      }
+
+      const { rows: agg, total, unique } = groupCountsByUOBK(rows, uobkKey);
+      kpiRows.textContent = total.toLocaleString("id-ID");
+      kpiUnique.textContent = unique.toLocaleString("id-ID");
+      renderTable(agg);
+      renderChart(agg);
+      renderReferenceCheck(agg);
+      ts.textContent = nowID();
+      msg.textContent = "Sukses. Data diperbarui.";
+    } catch (e) {
+      console.error(e);
+      showErr("Gagal memuat. Pastikan URL adalah CSV publik dari Google Sheets.", String(e));
+      msg.textContent = "Gagal memuat.";
+    }
+  })();
+</script>
