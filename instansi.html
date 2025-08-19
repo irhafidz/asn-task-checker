@@ -174,6 +174,9 @@ function runEDA(rows){
     summary.push({ INSTANSI: inst, TOTAL_ROWS: g.total, UNIQUE_NIP: g.uniq, NOT_UNIQUE_NIP_COUNT: notUniq });
   }
   summary.sort((a,b)=> b.NOT_UNIQUE_NIP_COUNT - a.NOT_UNIQUE_NIP_COUNT || b.TOTAL_ROWS - a.TOTAL_ROWS );
+  // Total rows
+    const totalRows = data.length;
+
 
   let allMembers = 0, excess = 0, groups = 0;
   for(const [inst, g] of byInst.entries()){
@@ -185,6 +188,7 @@ function runEDA(rows){
     excess += (g.total - g.uniq);
   }
 
+  q('#kpiTotal').textContent = totalRows.toLocaleString('id-ID');
   q('#kpiAll').textContent = allMembers.toLocaleString('id-ID');
   q('#kpiExcess').textContent = excess.toLocaleString('id-ID');
   q('#kpiGroups').textContent = groups.toLocaleString('id-ID');
