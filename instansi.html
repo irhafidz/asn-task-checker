@@ -150,6 +150,8 @@ Papa.parse(url, {
 
 
 function runEDA(rows){
+  // Total rows
+  const totalRows = data.length;
   const hasInstansi = rows.length && ('INSTANSI' in rows[0]);
   const hasNIP = rows.length && ('NIP' in rows[0]);
   if(!hasInstansi || !hasNIP){ throw new Error('CSV must include INSTANSI and NIP columns'); }
@@ -174,10 +176,7 @@ function runEDA(rows){
     summary.push({ INSTANSI: inst, TOTAL_ROWS: g.total, UNIQUE_NIP: g.uniq, NOT_UNIQUE_NIP_COUNT: notUniq });
   }
   summary.sort((a,b)=> b.NOT_UNIQUE_NIP_COUNT - a.NOT_UNIQUE_NIP_COUNT || b.TOTAL_ROWS - a.TOTAL_ROWS );
-  // Total rows
-    const totalRows = data.length;
-
-
+ 
   let allMembers = 0, excess = 0, groups = 0;
   for(const [inst, g] of byInst.entries()){
     const freq = new Map();
