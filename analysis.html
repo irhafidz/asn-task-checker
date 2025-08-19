@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Analysis — Perangkat_BadanPendapatan (Live CSV)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root { --bg:#fff; --text:#111827; --muted:#6b7280; --border:#e5e7eb; --thead:#f3f4f6; }
+    *{box-sizing:border-box}
+    body{margin:1rem;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:var(--bg)}
+    header{margin:0 0 1rem}
+    h1{margin:.2rem 0;font-size:clamp(1.4rem,2.2vw,2rem)}
+    .sub{color:var(--muted)}
+    .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:1rem}
+    .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;margin:.75rem 0}
+    .kpi{padding:.8rem;border:1px solid var(--border);border-radius:10px;background:#fafafa}
+    .kpi .v{font-weight:700;font-size:1.15rem}
+    .row{display:grid;gap:1rem}
+    @media(min-width:1100px){.row{grid-template-columns:1fr 1fr}}
+    .table-wrap{overflow:auto}
+    table{border-collapse:collapse;width:100%;min-width:900px}
+    th,td{border:1px solid var(--border);padding:.55rem .6rem;text-align:left;vertical-align:top}
+    thead th{background:var(--thead);position:sticky;top:0;z-index:1}
+    .footer{margin-top:1rem;color:var(--muted)}
+    canvas{max-height:520px}
+    .err{margin-top:.8rem;padding:.7rem .9rem;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:10px;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Analysis — Perangkat_BadanPendapatan</h1>
+    <div class="sub">Dimuat: <span id="ts"></span></div>
+  </header>
+
+  <section class="card">
+    <div class="kpis">
+      <div class="kpi"><div class="t">TOTAL NIP Rows</div><div id="kpiRows" class="v">-</div></div>
+      <div class="kpi"><div class="t">TOTAL Unique NIP</div><div id="kpiUniqueNip" class="v">-</div></div>
+      <div class="kpi"><div class="t">TOTAL NOT Unique NIP</div><div id="kpiDupNip" class="v">-</div></div>
+    </div>
+
+    <div class="row">
+      <div class="card" style="padding:1rem">
+        <h3 style="margin-top:0">Histogram — Unique NIP per Perangkat_BadanPendapatan</h3>
+        <canvas id="uniqueChart"></canvas>
+      </div>
+      <div class="card" style="padding:1rem">
+        <h3 style="margin-top:0">Histogram — NOT_Unique NIP (Duplikat) per Perangkat_BadanPendapatan</h3>
+        <canvas id="dupChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <h3 style="margin-top:0">Tabel — Ringkasan per Perangkat_BadanPendapatan</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Perangkat_BadanPendapatan</th>
+              <th>NIP_Count</th>
+              <th>Unique_NIP_Count</th>
+              <th>NOT_Unique_NIP_Count</th>
+              <th>Percentage (NIP_Count)</th>
+            </tr>
+          </thead>
+          <tbody id="tblBody"></tbody>
+        </table>
+      </div>
+      <div id="msg" class="footer"></div>
+      <div id="err" class="err" style="display:none"></div>
+    </div>
+  </section>
+
+  <script>
+  // << Replace with your publish-to-web CSV if needed >>
+  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRP0wSMBvkxSqDTkF0ToCm3D2y2MONJsVeJVfS8WbI9VEsLNRZAwmoaFqtbHP7NSg/pub?gid=1786696255&single=true&output=csv";
+
+  const $ = (s)=>document.querySelector(s);
+  const ts = $("#ts"), msg = $("#msg"), errBox = $("#err"), tblBody = $("#tblBody");
+  const kpiRows = $("#kpiRows"), kpiUniqueNip = $("#kpiUniqueNip"), kpiDupNip = $("#kpiDupNip");
+  let uniqueChart, dupChart;
+
+  function nowID(){ return new Date().toLocaleString("id-ID",{hour12:false}); }
+  function showErr(title, detail){
+    errBox.style.display="block";
+    errBox.textContent = title + (detail ? "\n\n"+detail : "");
+  }
+
+  async function loadCSVText(url){
+    const u = url + (url.includes("?") ? "&" : "?") + "v=" + Date.now();
+    const res = await fetch(u, { redirect: "follow" });
+    let peek = "";
+    try { peek = await res.clone().text(); } catch {}
+    if (!res.ok){
+      throw new Error(`HTTP ${res.status} ${res.statusText}\n` + (peek||"").slice(0,200));
+    }
+    return peek;
+  }
+
+  function parseCSVText(text){
+    const result = Papa.parse(text, { header:true, skipEmptyLines:true });
+    return result.data.map(row=>{
+      const out = {};
+      for (const k in row){
+        if (!Object.prototype.hasOwnProperty.call(row,k)) continue;
+        const nk = (k||"").trim();
+        const v = row[k];
+        out[nk] = (typeof v === "string") ? v.trim() : v;
+      }
+      return out;
+    });
+  }
+
+  // Detectors
+  function detectKey(rows, patterns){
+    const headers = Object.keys(rows[0] || {}).map(h=>h.trim());
+    for (const p of patterns){
+      const hit = headers.find(h => p.test(h));
+      if (hit) return hit;
+    }
+    return null;
+  }
+  function detectPerangkatKey(rows){
+    return detectKey(rows, [
+      /^Perangkat_BadanPendapatan$/i,
+      /Perangkat\s*BadanPendapatan/i,
+      /Badan\s*Pendapatan/i
+    ]);
+  }
+  function detectNipKey(rows){
+    const headers = Object.keys(rows[0] || {}).map(h=>h.trim());
+    const exact = headers.find(h => /^NIP$/i.test(h));
+    if (exact) return exact;
+    return headers.find(h => h.toLowerCase().includes("nip")) || null;
+  }
+
+  // Aggregations
+  function buildSummary(rows, perangkatKey, nipKey){
+    // Row counts (by perangkat)
+    const rowCount = new Map();
+    rows.forEach(r=>{
+      const k = String(r[perangkatKey] ?? "").trim();
+      if (!k) return;
+      rowCount.set(k, (rowCount.get(k)||0) + 1);
+    });
+    const totalRows = [...rowCount.values()].reduce((a,b)=>a+b,0);
+
+    // NIP metrics (only if nipKey exists)
+    const nipCount = new Map();
+    const nipSet   = new Map();
+    if (nipKey){
+      rows.forEach(r=>{
+        const k = String(r[perangkatKey] ?? "").trim();
+        if (!k) return;
+        const nip = (r[nipKey]==null ? "" : String(r[nipKey])).trim();
+        if (!nip) return; // ignore empty
+        nipCount.set(k, (nipCount.get(k)||0) + 1);
+        if (!nipSet.has(k)) nipSet.set(k, new Set());
+        nipSet.get(k).add(nip);
+      });
+    }
+
+    const perangkatNames = Array.from(rowCount.keys()).sort((a,b)=> (rowCount.get(b)-rowCount.get(a)) || a.localeCompare(b));
+    const out = perangkatNames.map(name=>{
+      const rc = rowCount.get(name) || 0;
+      const nc = nipKey ? (nipCount.get(name) || 0) : 0;
+      const uc = nipKey ? ((nipSet.get(name) ? nipSet.get(name).size : 0)) : 0;
+      const dup = Math.max(0, nc - uc);
+      return {
+        Perangkat_BadanPendapatan: name,
+        NIP_Count: nc,
+        Unique_NIP_Count: uc,
+        NOT_Unique_NIP_Count: dup,
+        Row_Count: rc,
+        Percentage: totalRows ? (rc/totalRows*100) : 0
+      };
+    });
+
+    // Totals for KPIs
+    const totalNip = nipKey ? [...nipCount.values()].reduce((a,b)=>a+b,0) : 0;
+    const totalUnique = nipKey ? [...nipSet.values()].reduce((a,s)=>a + s.size, 0) : 0;
+    const totalDup = Math.max(0, totalNip - totalUnique);
+
+    return { out, totals: { totalRows, totalNip, totalUnique, totalDup } };
+  }
+
+  // Renderers
+  function renderTable(arr){
+    tblBody.innerHTML = arr.map(r=>`<tr>
+      <td>${r.Perangkat_BadanPendapatan}</td>
+      <td>${r.NIP_Count}</td>
+      <td>${r.Unique_NIP_Count}</td>
+      <td>${r.NOT_Unique_NIP_Count}</td>
+      <td>${r.Percentage.toFixed(1)}%</td>
+    </tr>`).join("");
+  }
+
+  function renderBar(canvas, labels, data, yLabel, tooltipSuffix){
+    const ctx = canvas.getContext("2d");
+    const chart = new Chart(ctx, {
+      type: "bar",
+      data: { labels, datasets: [{ label: yLabel, data }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => ` ${ctx.parsed.y}${tooltipSuffix}` } }
+        },
+        scales: { x: { ticks: { autoSkip:false, maxRotation:45 } }, y: { beginAtZero:true } }
+      }
+    });
+    return chart;
+  }
+
+  (async function init(){
+    msg.textContent = "Memuat…";
+    try{
+      const text = await loadCSVText(CSV_URL);
+      const rows = parseCSVText(text);
+      if (!rows.length){
+        showErr("CSV kosong atau tidak ter-parse.", "Pastikan sheet yang dipublish berisi data.");
+        msg.textContent = "Gagal memuat."; return;
+      }
+
+      const perangkatKey = detectPerangkatKey(rows);
+      const nipKey = detectNipKey(rows); // optional (we show counts only; never reveal NIP values)
+      if (!perangkatKey){
+        const headers = Object.keys(rows[0] || {});
+        showErr("Kolom 'Perangkat_BadanPendapatan' tidak ditemukan.",
+                "Header terdeteksi: " + headers.join(", "));
+        msg.textContent = "Gagal memuat."; return;
+      }
+
+      const { out, totals } = buildSummary(rows, perangkatKey, nipKey);
+
+      // KPIs
+      kpiRows.textContent = (totals.totalNip || 0).toLocaleString("id-ID");
+      kpiUniqueNip.textContent = (totals.totalUnique || 0).toLocaleString("id-ID");
+      kpiDupNip.textContent = (totals.totalDup || 0).toLocaleString("id-ID");
+
+      // Table
+      renderTable(out);
+
+      // Charts
+      const labels = out.map(r=>r.Perangkat_BadanPendapatan);
+      const uniques = out.map(r=>r.Unique_NIP_Count);
+      const dups = out.map(r=>r.NOT_Unique_NIP_Count);
+
+      if (uniqueChart) uniqueChart.destroy();
+      if (dupChart) dupChart.destroy();
+      uniqueChart = renderBar(document.getElementById("uniqueChart"), labels, uniques, "Unique NIP", "");
+      dupChart    = renderBar(document.getElementById("dupChart"), dups, dups, "NOT_Unique NIP", " duplikat");
+
+      ts.textContent = nowID();
+      msg.textContent = "Sukses. Data diperbarui.";
+    }catch(e){
+      console.error(e);
+      showErr("Gagal memuat. Pastikan URL adalah CSV publik dari Google Sheets.", String(e));
+      msg.textContent = "Gagal memuat.";
+    }
+  })();
+  </script>
+</body>
+</html>
