@@ -49,6 +49,10 @@
         <canvas id="barChart"></canvas>
       </div>
       <div class="card" style="padding:1rem">
+  <h3 style="margin-top:0">Bar Chart — NOT_Unique_NIP_Count per UOBK</h3>
+  <canvas id="dupChart"></canvas>
+</div>
+      <div class="card" style="padding:1rem">
         <h3 style="margin-top:0">Reference UOBK List Check</h3>
         <div class="muted" style="margin:.25rem 0 .5rem">Hanya memeriksa nama UOBK; tidak menampilkan NIP.</div>
         <div><strong>Found (dengan jumlah baris):</strong><ul id="refFound" class="found"></ul></div>
@@ -60,7 +64,16 @@
       <h3 style="margin-top:0">Tabel — Counts per UOBK</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>UOBK</th><th>Row_Count</th><th>Percentage</th></tr></thead>
+        <thead>
+  <tr>
+    <th>UOBK</th>
+    <th>Row_Count</th>
+    <th>NIP_Count</th>
+    <th>Unique_NIP_Count</th>
+    <th>NOT_Unique_NIP_Count</th>
+    <th>Percentage</th>
+  </tr>
+</thead>
           <tbody id="tblBody"></tbody>
         </table>
       </div>
@@ -68,8 +81,7 @@
       <div id="err" class="err" style="display:none"></div>
     </div>
   </section>
-
-  <script>
+<script>
   const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5C1wkIPrNoBRwRaDohzVFT6wfeX0lfSl2BTCUpDcQwiuQtgkybGjcmzKl7LBu7g/pub?gid=1021451323&single=true&output=csv";
   const REFERENCE_UOBK = [
     "RS JIWA MENUR","RS MATA MASYARAKAT JAWA TIMUR","RS PARU JEMBER",
@@ -82,7 +94,10 @@
   const $ = (s)=>document.querySelector(s);
   const ts = $("#ts"), kpiRows = $("#kpiRows"), kpiUnique = $("#kpiUnique");
   const tblBody = $("#tblBody"), msg = $("#msg"), refFound = $("#refFound"), refNotFound = $("#refNotFound");
-  const errBox = $("#err"), barCanvas = document.getElementById("barChart"); let barChart;
+  const errBox = $("#err");
+  const barCanvas = document.getElementById("barChart");
+  const dupCanvas = document.getElementById("dupChart");
+  let barChart, dupChart;
 
   function nowID() { return new Date().toLocaleString("id-ID",{hour12:false}); }
   function showErr(title, detail) {
@@ -91,13 +106,11 @@
   }
 
   async function loadCSVText(url) {
-    const u = url + (url.includes("?") ? "&" : "?") + "v=" + Date.now(); // cache-bust
+    const u = url + (url.includes("?") ? "&" : "?") + "v=" + Date.now();
     const res = await fetch(u, { redirect: "follow" });
     let peek = "";
     try { peek = await res.clone().text(); } catch {}
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}\nPratinjau respons (200 chars):\n` + (peek||"").slice(0,200));
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}\n` + (peek||"").slice(0,200));
     return peek;
   }
 
@@ -115,42 +128,83 @@
     });
   }
 
+  // --- Column detectors ---
   function detectUOBKKey(rows) {
     const headers = Object.keys(rows[0] || {}).map(h => h.trim());
     const patterns = [
       /^u\s*o\s*\/?\s*b\s*k$/i,
-      /perangkat.*uobk/i,
       /^uobk$/i,
+      /perangkat.*uobk/i,
+      /uobk/i
     ];
-    for (const p of patterns) {
-      const hit = headers.find(h => p.test(h));
-      if (hit) return hit;
-    }
-    const loose = headers.find(h => h.toLowerCase().includes("uobk"));
-    return loose || null;
+    for (const p of patterns) { const hit = headers.find(h => p.test(h)); if (hit) return hit; }
+    return null;
+  }
+  function detectNIPKey(rows) {
+    const headers = Object.keys(rows[0] || {}).map(h => h.trim());
+    const nip = headers.find(h => /^nip$/i.test(h));
+    if (nip) return nip;
+    return headers.find(h => h.toLowerCase().includes("nip")) || null;
   }
 
-  function groupCountsByUOBK(rows, key) {
+  // --- Aggregations ---
+  function baseCountsByUOBK(rows, uobkKey) {
     const map = new Map();
     rows.forEach(r => {
-      const u = String((r[key] ?? "")).trim();
+      const u = String((r[uobkKey] ?? "")).trim();
       if (!u) return;
       map.set(u, (map.get(u) || 0) + 1);
     });
     const total = Array.from(map.values()).reduce((a,b)=>a+b,0);
     const arr = Array.from(map.entries())
-      .map(([UOBK, Row_Count]) => ({ UOBK, Row_Count, Percentage: Row_Count/total*100 }))
+      .map(([UOBK, Row_Count]) => ({ UOBK, Row_Count }))
       .sort((a,b)=> b.Row_Count - a.Row_Count);
-    return { rows: arr, total, unique: map.size };
+    return { arr, total };
   }
 
-  function renderTable(arr){
-    tblBody.innerHTML = arr.map(r=>`<tr>
-      <td>${r.UOBK}</td><td>${r.Row_Count}</td><td>${r.Percentage.toFixed(1)}%</td>
+  function nipCountsByUOBK(rows, uobkKey, nipKey) {
+    // Count all NIP (non-empty) and unique NIP per UOBK
+    const countMap = new Map();   // total NIP per UOBK
+    const setMap = new Map();     // unique NIP set per UOBK
+    rows.forEach(r => {
+      const u = String((r[uobkKey] ?? "")).trim();
+      if (!u) return;
+      const nipRaw = r[nipKey];
+      const nip = (nipRaw == null ? "" : String(nipRaw)).trim();
+      if (!nip) return; // ignore empty NIP cells
+      countMap.set(u, (countMap.get(u) || 0) + 1);
+      if (!setMap.has(u)) setMap.set(u, new Set());
+      setMap.get(u).add(nip);
+    });
+    // Build rows
+    const keys = new Set([...countMap.keys(), ...setMap.keys()]);
+    const rowsOut = [...keys].map(u => {
+      const NIP_Count = countMap.get(u) || 0;
+      const Unique_NIP_Count = (setMap.get(u) ? setMap.get(u).size : 0);
+      const NOT_Unique_NIP_Count = Math.max(0, NIP_Count - Unique_NIP_Count);
+      return { UOBK: u, NIP_Count, Unique_NIP_Count, NOT_Unique_NIP_Count };
+    });
+    // Totals
+    const totalNip = [...countMap.values()].reduce((a,b)=>a+b,0);
+    const totalUnique = [...setMap.values()].reduce((a,s)=>a + s.size, 0);
+    const totalNotUnique = Math.max(0, totalNip - totalUnique);
+    const totals = { NIP_Count: totalNip, Unique_NIP_Count: totalUnique, NOT_Unique_NIP_Count: totalNotUnique };
+    return { rowsOut, totals };
+  }
+
+  // --- Renderers ---
+  function renderTable(merged){
+    tblBody.innerHTML = merged.map(r=>`<tr>
+      <td>${r.UOBK}</td>
+      <td>${r.Row_Count}</td>
+      <td>${r.NIP_Count ?? 0}</td>
+      <td>${r.Unique_NIP_Count ?? 0}</td>
+      <td>${r.NOT_Unique_NIP_Count ?? 0}</td>
+      <td>${(r.Percentage ?? 0).toFixed(1)}%</td>
     </tr>`).join("");
   }
 
-  function renderChart(arr){
+  function renderChartCounts(arr){
     const labels = arr.map(r=>r.UOBK);
     const counts = arr.map(r=>r.Row_Count);
     if (barChart) barChart.destroy();
@@ -160,6 +214,21 @@
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display:false }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.parsed.y} baris` } } },
+        scales: { x: { ticks: { autoSkip:false, maxRotation:45 } }, y: { beginAtZero:true } }
+      }
+    });
+  }
+
+  function renderChartDuplicates(arr){
+    const labels = arr.map(r=>r.UOBK);
+    const dupCounts = arr.map(r=>r.NOT_Unique_NIP_Count ?? 0);
+    if (dupChart) dupChart.destroy();
+    dupChart = new Chart(dupCanvas, {
+      type: "bar",
+      data: { labels, datasets: [{ label: "NOT_Unique_NIP_Count", data: dupCounts }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display:false }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.parsed.y} duplikat NIP` } } },
         scales: { x: { ticks: { autoSkip:false, maxRotation:45 } }, y: { beginAtZero:true } }
       }
     });
@@ -178,7 +247,6 @@
     try {
       const text = await loadCSVText(CSV_URL);
       const rows = parseCSVText(text);
-
       if (!rows.length) {
         showErr("CSV kosong atau tidak ter-parse.",
                 "Cek apakah sheet yang dipublish berisi data.");
@@ -186,22 +254,46 @@
         return;
       }
 
+      // Detect columns
       const uobkKey = detectUOBKKey(rows);
+      const nipKey  = detectNIPKey(rows);
       if (!uobkKey) {
         const headers = Object.keys(rows[0] || {});
         showErr("Kolom UOBK tidak ditemukan.",
-                "Header terdeteksi: " + headers.join(", ") +
-                "\nBeri nama kolom sebagai 'UOBK'.");
+                "Header terdeteksi: " + headers.join(", ") + "\nBeri nama kolom sebagai 'UOBK'.");
         msg.textContent = "Gagal memuat.";
         return;
       }
+      // nipKey is optional; if missing, we’ll show zeros for NIP-based metrics
+      const { arr: baseArr, total } = baseCountsByUOBK(rows, uobkKey);
+      const percentageMap = new Map(baseArr.map(r=>[r.UOBK, (r.Row_Count/total*100)]));
 
-      const { rows: agg, total, unique } = groupCountsByUOBK(rows, uobkKey);
+      let nipAgg = { rowsOut: [], totals: { NIP_Count: 0, Unique_NIP_Count: 0, NOT_Unique_NIP_Count: 0 } };
+      if (nipKey) nipAgg = nipCountsByUOBK(rows, uobkKey, nipKey);
+
+      // Merge base + NIP metrics
+      const nipMap = new Map(nipAgg.rowsOut.map(r=>[r.UOBK, r]));
+      const merged = baseArr.map(r => {
+        const nipRow = nipMap.get(r.UOBK) || {};
+        return {
+          UOBK: r.UOBK,
+          Row_Count: r.Row_Count,
+          NIP_Count: nipRow.NIP_Count ?? 0,
+          Unique_NIP_Count: nipRow.Unique_NIP_Count ?? 0,
+          NOT_Unique_NIP_Count: nipRow.NOT_Unique_NIP_Count ?? 0,
+          Percentage: percentageMap.get(r.UOBK) ?? 0
+        };
+      });
+
+      // KPI (reuse existing ones for Row_Count; if you want totals of NIP metrics, we could add more KPI tiles)
       kpiRows.textContent = total.toLocaleString("id-ID");
-      kpiUnique.textContent = unique.toLocaleString("id-ID");
-      renderTable(agg);
-      renderChart(agg);
-      renderReferenceCheck(agg);
+      kpiUnique.textContent = (new Set(merged.map(r=>r.UOBK))).size.toLocaleString("id-ID");
+
+      // Render all
+      renderTable(merged);
+      renderChartCounts(merged);
+      renderChartDuplicates(merged);
+      renderReferenceCheck(merged);
       ts.textContent = nowID();
       msg.textContent = "Sukses. Data diperbarui.";
     } catch (e) {
@@ -210,6 +302,8 @@
       msg.textContent = "Gagal memuat.";
     }
   })();
-  </script>
+</script>
+
+
 </body>
 </html>
