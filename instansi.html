@@ -34,8 +34,10 @@
     th { text-align:left; color: var(--muted); font-weight:600; }
     .muted { color: var(--muted); }
     footer { text-align:center; color: var(--muted); padding: 24px; }
-    .legend { columns: 2; column-gap: 24px; }
-    @media (min-width: 900px) { .legend { columns: 3; } }
+    .legend {
+      columns: 1;      /* always 1 column */
+      column-gap: 0;   /* no gap needed */
+      }  
     canvas { width: 100% !important; height: 420px !important; }
     .note { font-size:12px; color:var(--muted); margin-top:6px; }
   </style>
