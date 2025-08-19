@@ -72,18 +72,18 @@
       </div>
     </section>
 
-    <div class="grid" style="margin-top:16px;">
-      <section class="card">
-        <h2 style="margin:0 0 8px; font-size:16px;">Histogram: Duplicate NIP per INSTANSI (codes)</h2>
-        <canvas id="dupChart" style="min-width:900px; height:420px;"></canvas>
-        <div class="note">X-axis uses numeric codes. See LEGEND at right.</div>
-      </section>
+    <section class="card" style="margin-top:16px;">
+  <h2 style="margin:0 0 8px; font-size:16px;">Histogram: Duplicate NIP per INSTANSI (codes)</h2>
+  <div class="chart-wrap" style="overflow-x:auto;">
+    <canvas id="dupChart" style="height:420px;"></canvas>
+  </div>
+  <div class="note">X-axis uses numeric codes. See LEGEND below.</div>
+</section>
 
-      <section class="card">
-        <h2 style="margin:0 0 8px; font-size:16px;">Legend (Code → INSTANSI)</h2>
-        <div id="legend" class="legend muted">–</div>
-      </section>
-    </div>
+<section class="card" style="margin-top:16px;">
+  <h2 style="margin:0 0 8px; font-size:16px;">Legend (Code → INSTANSI)</h2>
+  <div id="legend" class="legend muted">–</div>
+</section>
 
     <section class="card" style="margin-top:16px;">
       <h2 style="margin:0 0 8px; font-size:16px;">Summary by INSTANSI</h2>
@@ -206,19 +206,36 @@ function runEDA(rows){
 
   const labels = legend.map(x=> x.code);
   const dupCounts = summary.map(r=> r.NOT_UNIQUE_NIP_COUNT);
+  document.getElementById('dupChart').style.minWidth = (labels.length * 28) + 'px';
+
+  
   if(chart){ chart.destroy(); }
-  const ctx = document.getElementById('dupChart');
-  chart = new Chart(ctx, {
-    type: 'bar',
-    data: { labels, datasets: [{ label: 'Duplicates', data: dupCounts }] },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { title: { display: true, text: 'LEGEND CODE' } },
-        y: { title: { display: true, text: 'Jumlah Duplikat NIP' }, beginAtZero: true, ticks: { precision: 0 } }
-      }
+ const ctx = document.getElementById('dupChart');
+if(chart){ chart.destroy(); }
+chart = new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [{
+      label: 'Duplicates',
+      data: dupCounts,
+      barThickness: 22,     // keep bars readable
+      maxBarThickness: 26,
+      categoryPercentage: 1.0,
+      barPercentage: 1.0
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,   // allow the canvas height you set in style
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { title: { display: true, text: 'LEGEND CODE' }, ticks: { autoSkip: false } },
+      y: { title: { display: true, text: 'Jumlah Duplikat NIP' }, beginAtZero: true, ticks: { precision: 0 } }
     }
-  });
+  }
+});
+
 }
 </script>
 </body>
