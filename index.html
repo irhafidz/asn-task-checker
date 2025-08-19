@@ -1,56 +1,43 @@
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>UOBK EDA (Live CSV)</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha512-K4M4Sx6o8D6n5Xy0R7a9vU+q3oVq6G8XzRj1V7qj9jQ2jGJgq3dQnqYd8k2CqVg3O8b0h2b3b8q1tTg8Qx+o0A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" integrity="sha384-Wb5j+PX7VvYq55i1lR5sWnNmQ8I1w3+8b+Yd8fCMTwM1i8Qk9o0gqY5oYxRzqgQ9" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <style>
-    :root {
-      --bg:#ffffff; --text:#111827; --muted:#6b7280; --card:#fff;
-      --border:#e5e7eb; --thead:#f3f4f6; --accent:#2563eb;
-    }
+    :root { --bg:#fff; --text:#111827; --muted:#6b7280; --border:#e5e7eb; --thead:#f3f4f6; }
     *{box-sizing:border-box}
     body{margin:1rem;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:var(--bg)}
     header{margin:0 0 1rem}
     h1{margin:.2rem 0;font-size:clamp(1.4rem,2.2vw,2rem)}
-    .sub{color:var(--muted);font-size:.95rem}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem;box-shadow:0 1px 2px rgba(0,0,0,.06)}
-    .row{display:grid;gap:1rem}
-    @media(min-width:1000px){.row{grid-template-columns:2fr 1fr}}
-    .tools{display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0 1rem}
-    .input{padding:.55rem .7rem;border:1px solid var(--border);border-radius:10px;width:min(560px,100%)}
-    .btn{padding:.55rem .9rem;border:1px solid var(--border);border-radius:10px;background:#fff;cursor:pointer}
-    .kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:.5rem 0 1rem}
+    .sub{color:var(--muted)}
+    .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:1rem}
+    .kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:.75rem 0}
     .kpi{padding:.8rem;border:1px solid var(--border);border-radius:10px;background:#fafafa}
     .kpi .v{font-weight:700;font-size:1.15rem}
+    .row{display:grid;gap:1rem}
+    @media(min-width:1000px){.row{grid-template-columns:2fr 1fr}}
     .table-wrap{overflow:auto}
     table{border-collapse:collapse;width:100%;min-width:720px}
     th,td{border:1px solid var(--border);padding:.55rem .6rem;text-align:left;vertical-align:top}
-    thead th{background:var(--thead);position:sticky;top:0;z-index:1}
-    tbody tr:nth-child(even){background:#fafafa}
+    thead th{background:var(--thead)}
     .muted{color:var(--muted)}
     .found{color:#065f46}
     .notfound{color:#991b1b}
-    .footer{margin-top:1rem;color:var(--muted);font-size:.9rem}
+    .footer{margin-top:1rem;color:var(--muted)}
     canvas{max-height:520px}
+    .err{margin-top:.8rem;padding:.7rem .9rem;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:10px;white-space:pre-wrap}
   </style>
 </head>
 <body>
   <header>
     <h1>Simple EDA: UOBK (Live CSV)</h1>
-    <div class="sub">Menarik data langsung dari Google Sheets (publish to web – CSV). Terakhir dimuat: <span id="ts"></span></div>
+    <div class="sub">CSV: <code id="src"></code> • Dimuat: <span id="ts"></span></div>
   </header>
 
   <section class="card">
-    <div class="tools">
-      <input id="csvUrl" class="input" type="url" placeholder="Tempel URL CSV Google Sheets (publish to web)…" />
-      <button id="btnLoad" class="btn">Muat Data</button>
-      <button id="btnDemo" class="btn">Contoh URL</button>
-    </div>
     <div class="kpis">
       <div class="kpi"><div class="t">TOTAL rows (Row_Count)</div><div id="kpiRows" class="v">-</div></div>
       <div class="kpi"><div class="t">Unique UOBK</div><div id="kpiUnique" class="v">-</div></div>
@@ -61,7 +48,6 @@
         <h3 style="margin-top:0">Bar Chart — Row Counts per UOBK</h3>
         <canvas id="barChart"></canvas>
       </div>
-
       <div class="card" style="padding:1rem">
         <h3 style="margin-top:0">Reference UOBK List Check</h3>
         <div class="muted" style="margin:.25rem 0 .5rem">Hanya memeriksa nama UOBK; tidak menampilkan NIP.</div>
@@ -74,159 +60,26 @@
       <h3 style="margin-top:0">Tabel — Counts per UOBK</h3>
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>UOBK</th>
-              <th>Row_Count</th>
-              <th>Percentage</th>
-            </tr>
-          </thead>
+          <thead><tr><th>UOBK</th><th>Row_Count</th><th>Percentage</th></tr></thead>
           <tbody id="tblBody"></tbody>
         </table>
       </div>
+      <div id="msg" class="footer"></div>
+      <div id="err" class="err" style="display:none"></div>
     </div>
-
-    <div id="msg" class="footer"></div>
   </section>
 
   <script>
-    // ======== CONFIG ========
+    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5C1wkIPrNoBRwRaDohzVFT6wfeX0lfSl2BTCUpDcQwiuQtgkybGjcmzKl7LBu7g/pub?output=csv";
     const REFERENCE_UOBK = [
-      "RS JIWA MENUR",
-      "RS MATA MASYARAKAT JAWA TIMUR",
-      "RS PARU JEMBER",
-      "RS PARU MANGUHARJO PROVINSI JAWA TIMUR",
-      "RSUD DAHA HUSADA",
-      "RSUD DR. SAIFUL ANWAR",
-      "RSUD DR. SOEDONO MADIUN",
-      "RSUD DR. SOETOMO",
-      "RSUD DUNGUS",
-      "RSUD HAJI PROVINSI JAWA TIMUR",
-      "RSUD HUSADA PRIMA",
-      "RSUD KARSA HUSADA BATU",
-      "RSUD MOHAMMAD NOER PAMEKASAN",
-      "RSUD SUMBERGLAGAH"
+      "RS JIWA MENUR","RS MATA MASYARAKAT JAWA TIMUR","RS PARU JEMBER",
+      "RS PARU MANGUHARJO PROVINSI JAWA TIMUR","RSUD DAHA HUSADA","RSUD DR. SAIFUL ANWAR",
+      "RSUD DR. SOEDONO MADIUN","RSUD DR. SOETOMO","RSUD DUNGUS",
+      "RSUD HAJI PROVINSI JAWA TIMUR","RSUD HUSADA PRIMA","RSUD KARSA HUSADA BATU",
+      "RSUD MOHAMMAD NOER PAMEKASAN","RSUD SUMBERGLAGAH"
     ];
 
-    const $ = (sel)=>document.querySelector(sel);
-    const ts = $("#ts");
-    const csvInput = $("#csvUrl");
-    const btnLoad = $("#btnLoad");
-    const btnDemo = $("#btnDemo");
-    const kpiRows = $("#kpiRows");
-    const kpiUnique = $("#kpiUnique");
-    const tblBody = $("#tblBody");
-    const msg = $("#msg");
-    const refFound = $("#refFound");
-    const refNotFound = $("#refNotFound");
-    const barCanvas = document.getElementById("barChart");
-    let barChart;
-
-    function nowID() { return new Date().toLocaleString("id-ID",{hour12:false}); }
-
-    function parseCSV(url){
-      return new Promise((resolve,reject)=>{
-        Papa.parse(url + (url.includes("?")?"&":"?") + "v=" + Date.now(), {
-          download:true,
-          header:true,
-          complete:(res)=>resolve(res.data),
-          error:(err)=>reject(err)
-        });
-      });
-    }
-
-    function groupCountsByUOBK(rows){
-      const map = new Map();
-      rows.forEach(r=>{
-        const u = String((r["UOBK"] ?? "")).trim();
-        if (!u) return;
-        map.set(u, (map.get(u)||0)+1);
-      });
-      const total = Array.from(map.values()).reduce((a,b)=>a+b,0);
-      const arr = Array.from(map.entries())
-        .map(([UOBK, Row_Count])=>({UOBK, Row_Count, Percentage: Row_Count/total*100}))
-        .sort((a,b)=>b.Row_Count - a.Row_Count);
-      return { rows: arr, total, unique: map.size };
-    }
-
-    function renderTable(arr){
-      tblBody.innerHTML = arr.map(r=>`<tr>
-        <td>${r.UOBK}</td>
-        <td>${r.Row_Count}</td>
-        <td>${r.Percentage.toFixed(1)}%</td>
-      </tr>`).join("");
-    }
-
-    function renderChart(arr){
-      const labels = arr.map(r=>r.UOBK);
-      const counts = arr.map(r=>r.Row_Count);
-      if (barChart) { barChart.destroy(); }
-      barChart = new Chart(barCanvas, {
-        type: "bar",
-        data: { labels, datasets: [{ label: "Row Count", data: counts }] },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} baris` } }
-          },
-          scales: {
-            x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 0 } },
-            y: { beginAtZero: true }
-          }
-        }
-      });
-    }
-
-    function renderReferenceCheck(arr){
-      const map = new Map(arr.map(r=>[r.UOBK, r.Row_Count]));
-      const found = [];
-      const notFound = [];
-      REFERENCE_UOBK.forEach(name=>{
-        if (map.has(name)) found.push([name, map.get(name)]);
-        else notFound.push(name);
-      });
-      refFound.innerHTML = found.map(([n,c])=>`<li>${n} → <strong>${c}</strong> rows</li>`).join("") || "<li><em>(none)</em></li>";
-      refNotFound.innerHTML = notFound.map(n=>`<li>${n}</li>`).join("") || "<li><em>(none)</em></li>";
-    }
-
-    async function load(){
-      const url = (csvInput.value || "").trim();
-      if(!url){ msg.textContent = "Masukkan URL CSV publik (Publish to web)."; return; }
-      msg.textContent = "Memuat…";
-      try{
-        const rows = await parseCSV(url);
-        const { rows: agg, total, unique } = groupCountsByUOBK(rows);
-        kpiRows.textContent = total.toLocaleString("id-ID");
-        kpiUnique.textContent = unique.toLocaleString("id-ID");
-        renderTable(agg);
-        renderChart(agg);
-        renderReferenceCheck(agg);
-        ts.textContent = nowID();
-        msg.textContent = "Sukses. Data diperbarui.";
-      }catch(e){
-        console.error(e);
-        msg.textContent = "Gagal memuat. Pastikan URL adalah CSV publik dari Google Sheets.";
-      }
-    }
-
-    btnLoad.addEventListener("click", load);
-    btnDemo.addEventListener("click", ()=>{
-      // Example CSV (replace with your published link). For demo it expects columns incl. UOBK.
-      csvInput.value = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5C1wkIPrNoBRwRaDohzVFT6wfeX0lfSl2BTCUpDcQwiuQtgkybGjcmzKl7LBu7g/pub?gid=1021451323&single=true&output=csv";
-      load();
-    });
-
-    // Auto-load if URL hash provided (#csv=<urlencoded>)
-    (function initFromHash(){
-      csvInput.value = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5C1wkIPrNoBRwRaDohzVFT6wfeX0lfSl2BTCUpDcQwiuQtgkybGjcmzKl7LBu7g/pub?gid=1021451323&single=true&output=csv"; load();
-      const m = location.hash.match(/csv=([^&]+)/);
-      if (m) {
-        csvInput.value = decodeURIComponent(m[1]);
-        load();
-      }
-    })();
-  </script>
-</body>
-</html>
+    const $ = (s)=>document.querySelector(s);
+    const src = $("#src"), ts = $("#ts"), kpiRows = $("#kpiRows"), kpiUnique = $("#kpiUnique");
+    const tblBody = $("#tblBody"), msg = $("#msg"), refFound = $("#refFound"), refNotFound = $("#refNotFound");
+    const errBox = $("#err"), barCanvas = document.g
