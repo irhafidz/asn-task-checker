@@ -105,9 +105,30 @@
 // ===== Core EDA =====
 let chart;
 const q = (s)=>document.querySelector(s);
-// Direct Google Drive link (replace with your file ID)
-const fileId = "1404169547";
-const url = `https://drive.google.com/uc?id=${fileId}&export=download`;
+// === Use Google Sheets "Publish to the web" CSV URL ===
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYesleChlLlIDTlmOMkZHtJ5HDgOXAj8mswik1y36Ta9KnG3Nu9k-ZU8EhhlwIgg/pub?gid=1404169547&single=true&output=csvv";
+
+// Optional: allow override via ?csv=<encoded-url>
+const params = new URLSearchParams(location.search);
+const overrideUrl = params.get("csv");
+const FINAL_CSV_URL = overrideUrl ? decodeURIComponent(overrideUrl) : CSV_URL;
+
+// Auto-load when page is ready (with cache-buster)
+window.addEventListener("DOMContentLoaded", () => {
+  const urlWithBust = FINAL_CSV_URL + (FINAL_CSV_URL.includes("?") ? "&" : "?") + "cachebust=" + Date.now();
+  Papa.parse(urlWithBust, {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete: (res) => {
+      try { runEDA(res.data); }
+      catch (e) { console.error(e); alert("Error parsing/processing CSV. Check required columns: INSTANSI, NIP"); }
+    },
+    error: (err) => { console.error(err); alert("Failed to fetch CSV. Make sure 'Publish to the web' is enabled."); }
+  });
+});
+
+
 
 // Auto-load CSV when page loads
 Papa.parse(url, {
