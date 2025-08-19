@@ -34,7 +34,7 @@
 <body>
   <header>
     <h1>Simple EDA: UOBK (Live CSV)</h1>
-    <div class="sub">CSV: <code id="src"></code> • Dimuat: <span id="ts"></span></div>
+    <div class="sub">Dimuat: <span id="ts"></span></div>
   </header>
 
   <section class="card">
@@ -68,7 +68,8 @@
       <div id="err" class="err" style="display:none"></div>
     </div>
   </section>
-<script>
+
+  <script>
   const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5C1wkIPrNoBRwRaDohzVFT6wfeX0lfSl2BTCUpDcQwiuQtgkybGjcmzKl7LBu7g/pub?gid=1021451323&single=true&output=csv";
   const REFERENCE_UOBK = [
     "RS JIWA MENUR","RS MATA MASYARAKAT JAWA TIMUR","RS PARU JEMBER",
@@ -79,24 +80,9 @@
   ];
 
   const $ = (s)=>document.querySelector(s);
-  const src = $("#src"), ts = $("#ts"), kpiRows = $("#kpiRows"), kpiUnique = $("#kpiUnique");
+  const ts = $("#ts"), kpiRows = $("#kpiRows"), kpiUnique = $("#kpiUnique");
   const tblBody = $("#tblBody"), msg = $("#msg"), refFound = $("#refFound"), refNotFound = $("#refNotFound");
   const errBox = $("#err"), barCanvas = document.getElementById("barChart"); let barChart;
-
-  // Small debug box to show headers if needed
-  function ensureDebugBox() {
-    if (!document.getElementById("debug")) {
-      const d = document.createElement("div");
-      d.id = "debug";
-      d.style.cssText = "margin-top:.5rem;padding:.5rem .6rem;border:1px dashed #ddd;color:#6b7280;border-radius:8px;white-space:pre-wrap";
-      d.innerHTML = "<strong>Debug:</strong> —";
-      document.querySelector(".card:last-of-type").appendChild(d);
-    }
-  }
-  function setDebug(text) {
-    ensureDebugBox();
-    document.getElementById("debug").innerHTML = "<strong>Debug:</strong>\n" + text;
-  }
 
   function nowID() { return new Date().toLocaleString("id-ID",{hour12:false}); }
   function showErr(title, detail) {
@@ -129,51 +115,25 @@
     });
   }
 
-  // Detect a "name" column for the UOBK entity
-  function detectNameKey(rows) {
+  function detectUOBKKey(rows) {
     const headers = Object.keys(rows[0] || {}).map(h => h.trim());
-    // best guesses in order
-    const candidates = [
-      /^u\s*o\s*\/?\s*b\s*k$/i,           // UOBK, UO/BK
-      /^uobk$/i,                          // UOBK
-      /^nama\s*uobk$/i,                   // Nama UOBK
-      /^instansi$/i,                      // INSTANSI
-      /^perangkat\s*daerah$/i,            // Perangkat Daerah
-      /^nama$/i,                          // Nama
-      /uobk/i,                            // any header containing uobk
+    const patterns = [
+      /^u\s*o\s*\/?\s*b\s*k$/i,
+      /perangkat.*uobk/i,
+      /^uobk$/i,
     ];
-    for (const p of candidates) {
+    for (const p of patterns) {
       const hit = headers.find(h => p.test(h));
       if (hit) return hit;
     }
-    return null;
-  }
-
-  // Detect a category column that marks which rows are UOBK vs PD (optional)
-  function detectCategoryKey(rows) {
-    const headers = Object.keys(rows[0] || {}).map(h => h.trim());
-    const candidates = [
-      /^kategori$/i,
-      /Perangkat\s*Daerah.*UOBK\??/i
-    ];
-    for (const p of candidates) {
-      const hit = headers.find(h => p.test(h));
-      if (hit) return hit;
-    }
-    // also accept any header that includes 'kategori' loosely
-    const loose = headers.find(h => h.toLowerCase().includes("kategori"));
+    const loose = headers.find(h => h.toLowerCase().includes("uobk"));
     return loose || null;
   }
 
-  function filterUobkRows(rows, catKey) {
-    if (!catKey) return rows; // no category column; use all rows
-    return rows.filter(r => String(r[catKey] ?? "").trim().toLowerCase() === "uobk");
-  }
-
-  function groupCountsByKey(rows, nameKey) {
+  function groupCountsByUOBK(rows, key) {
     const map = new Map();
     rows.forEach(r => {
-      const u = String((r[nameKey] ?? "")).trim();
+      const u = String((r[key] ?? "")).trim();
       if (!u) return;
       map.set(u, (map.get(u) || 0) + 1);
     });
@@ -214,7 +174,6 @@
   }
 
   (async function init(){
-    src.textContent = CSV_URL;
     msg.textContent = "Memuat…";
     try {
       const text = await loadCSVText(CSV_URL);
@@ -227,21 +186,17 @@
         return;
       }
 
-      // Show headers for visibility
-      setDebug("Headers terdeteksi:\n- " + Object.keys(rows[0]).join("\n- "));
-
-      const nameKey = detectNameKey(rows);
-      if (!nameKey) {
-        showErr("Kolom nama UOBK tidak ditemukan.",
-                "Harap beri nama kolom seperti 'UOBK', 'Nama UOBK', 'INSTANSI', atau 'Perangkat Daerah'.");
+      const uobkKey = detectUOBKKey(rows);
+      if (!uobkKey) {
+        const headers = Object.keys(rows[0] || {});
+        showErr("Kolom UOBK tidak ditemukan.",
+                "Header terdeteksi: " + headers.join(", ") +
+                "\nBeri nama kolom sebagai 'UOBK'.");
         msg.textContent = "Gagal memuat.";
         return;
       }
 
-      const catKey = detectCategoryKey(rows);       // optional
-      const filtered = filterUobkRows(rows, catKey);
-      const { rows: agg, total, unique } = groupCountsByKey(filtered, nameKey);
-
+      const { rows: agg, total, unique } = groupCountsByUOBK(rows, uobkKey);
       kpiRows.textContent = total.toLocaleString("id-ID");
       kpiUnique.textContent = unique.toLocaleString("id-ID");
       renderTable(agg);
@@ -255,4 +210,6 @@
       msg.textContent = "Gagal memuat.";
     }
   })();
-</script>
+  </script>
+</body>
+</html>
