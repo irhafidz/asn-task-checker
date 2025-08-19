@@ -50,15 +50,7 @@
   </header>
 
   <main>
-    <section class="card" style="margin-bottom:16px;">
-      <div class="row">
-        <label for="fileId"><strong>Google Drive File ID</strong> (CSV):</label>
-        <input id="fileId" type="text" placeholder="e.g. 1ABC123xyz..." />
-        <button id="loadBtn">Load</button>
-      </div>
-      <div class="note">Share your CSV in Google Drive as "Anyone with the link" → paste File ID above. Expected columns: <code>INSTANSI</code> and <code>NIP</code>. NIP is used only for calculation and is never displayed.</div>
-    </section>
-
+    
     <section class="kpi">
       <div class="card">
         <p>All rows in duplicate groups</p>
@@ -113,23 +105,22 @@
 // ===== Core EDA =====
 let chart;
 const q = (s)=>document.querySelector(s);
+// Direct Google Drive link (replace with your file ID)
+const fileId = "1404169547";
+const url = `https://drive.google.com/uc?id=${fileId}&export=download`;
 
-q('#loadBtn').addEventListener('click', async ()=>{
-  const id = q('#fileId').value.trim();
-  if(!id){ alert('Please paste a Google Drive File ID'); return; }
-  const url = `https://drive.google.com/uc?id=${id}&export=download`;
-
-  Papa.parse(url, {
-    download: true,
-    header: true,
-    skipEmptyLines: true,
-    complete: (res)=>{
-      try { runEDA(res.data); } 
-      catch(e){ console.error(e); alert('Error parsing/processing CSV. Check required columns: INSTANSI, NIP'); }
-    },
-    error: (err)=>{ console.error(err); alert('Failed to fetch CSV. Is sharing enabled?'); }
-  });
+// Auto-load CSV when page loads
+Papa.parse(url, {
+  download: true,
+  header: true,
+  skipEmptyLines: true,
+  complete: (res)=>{
+    try { runEDA(res.data); } 
+    catch(e){ console.error(e); alert('Error parsing/processing CSV. Check required columns: INSTANSI, NIP'); }
+  },
+  error: (err)=>{ console.error(err); alert('Failed to fetch CSV. Is sharing enabled?'); }
 });
+
 
 function runEDA(rows){
   const hasInstansi = rows.length && ('INSTANSI' in rows[0]);
